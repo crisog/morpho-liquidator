@@ -1,0 +1,9 @@
+{
+  "name": "morpho-liquidator",
+  "version": "0.0.1",
+  "description": "market optimizooooor",
+  "main": "index.ts",
+  "repository": "https://github.com/crisog/morpho-liquidator",
+  "author": "CrisOG",
+  "license": "MIT"
+}
