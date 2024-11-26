@@ -5,5 +5,8 @@
   "main": "index.ts",
   "repository": "https://github.com/crisog/morpho-liquidator",
   "author": "CrisOG",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
 }
