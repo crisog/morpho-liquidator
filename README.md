@@ -16,13 +16,13 @@
 1. Install the dependencies
 
 ```bash
-$ yarn install
+yarn install
 ```
 
 For CI:
 
-````bash
-$ yarn install --frozen-lockfile
+```bash
+yarn install --frozen-lockfile
 ```
 
 2. Configure the environment variables
@@ -32,7 +32,7 @@ ETH_RPC_URL=https://ethereum-public.nodies.app
 BASE_RPC_URL=https://base-public.nodies.app
 
 ETH_WALLET_PRIVATE_KEY=<YOUR_NON_PRODUCTION_PRIVATE_KEY>
-````
+```
 
 ❗❗❗ IMPORTANT: Do not use production/mainnet private keys in your .env ❗❗❗
 
@@ -69,7 +69,7 @@ yarn start
 - [x] Periodical execution via cron job
 - [x] Chain, swap slippage and swap max impact are configurable
 
-# Roadmap
+## Roadmap
 
 - [] Support multiple sources of liquidatable positions (+ chance for opportunities)
 - [] Integrate a new indexer for positions - still work in progress [morpho-markets](https://github.com/crisog/morpho-markets)
