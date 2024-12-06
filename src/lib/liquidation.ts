@@ -252,16 +252,17 @@ export class LiquidationService {
         BigInt(priceRoute.destAmount) - repaidAssets
       )!;
 
+      const netProfitUsd = profitUsd - gasLimitUsd;
       const minProfitUsd = BigInt(this.minProfit);
 
-      if (profitUsd < minProfitUsd) {
+      if (netProfitUsd < minProfitUsd) {
         console.log(
-          `Profit ${profitUsd} is less than minimum profit ${minProfitUsd}`
+          `Net profit ${netProfitUsd} (profit: ${profitUsd}, gas: ${gasLimitUsd}) is less than minimum profit ${minProfitUsd}`
         );
         return {
           position: positionData,
           status: "NOT_PROFITABLE",
-          reason: "Insufficient profit",
+          reason: "Insufficient profit after gas costs",
         };
       }
 
