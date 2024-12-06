@@ -245,15 +245,19 @@ export class LiquidationService {
         1
       );
 
-      const ethPriceUsd = safeParseNumber(wethPriceUsd);
+      const ethPriceUsd = safeParseNumber(wethPriceUsd, 18);
 
       const gasLimitUsd = ethPriceUsd.wadMulDown(gasLimit * maxFeePerGas);
       const profitUsd = loanToken.toUsd(
         BigInt(priceRoute.destAmount) - repaidAssets
       )!;
 
-      if (profitUsd < gasLimitUsd) {
-        console.log("Profit is less than gas cost", profitUsd, gasLimitUsd);
+      const minProfitUsd = BigInt(this.minProfit);
+
+      if (profitUsd < minProfitUsd) {
+        console.log(
+          `Profit ${profitUsd} is less than minimum profit ${minProfitUsd}`
+        );
         return {
           position: positionData,
           status: "NOT_PROFITABLE",

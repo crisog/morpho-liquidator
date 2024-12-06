@@ -10,7 +10,7 @@ const config: BotConfig = {
   maxImpact: 2, // 2%
   swapFromToken: USDC_TOKEN,
   swapToToken: USDC_TOKEN,
-  minProfit: 100, // 0.01%
+  minProfit: 500, // in USD
 };
 
 const liquidator = new LiquidatorBot(config);
