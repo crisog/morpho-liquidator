@@ -120,7 +120,6 @@ export class LiquidationService {
 
       console.info("loanToken", loanToken);
 
-      // Calculate the actual amount of loan tokens needed
       const repaidAssets = market.toBorrowAssets(
         market.getLiquidationRepaidShares(seizableCollateral)
       );
@@ -136,7 +135,6 @@ export class LiquidationService {
 
       const encoder = new LiquidationEncoder(this.walletAddress, this.signer);
 
-      // If we don't have enough loan tokens, prepare the swap
       if (loanTokenBalance < repaidAssets) {
         const amountNeeded = repaidAssets - loanTokenBalance;
         console.log(
@@ -193,7 +191,6 @@ export class LiquidationService {
         );
       }
 
-      // Get expected profit after collateral sale
       const priceRoute = await this.paraSwapMin.swap.getRate({
         srcToken: collateralToken.address,
         srcDecimals: collateralToken.decimals,

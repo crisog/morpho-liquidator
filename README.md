@@ -76,3 +76,7 @@ yarn start
 - [ ] Add support for AWS Secrets Manager to pull private keys from it
 - [ ] Listen to new blocks notifications via WebSockets for real-time opportunity discovery
 - [ ] [Reth Extension](https://reth.rs/developers/exex/exex.html) (ExEx) for live tracking of liquidatable positions
+
+## Credits
+
+Morpho's [liquidation bot example](https://github.com/morpho-org/sdks/blob/main/packages/blue-sdk-ethers-liquidation/examples/whitelisted-erc4626-1inch.ts) was a valuable reference for developing this bot, along with Morpho's [docs](https://docs.morpho.org/).
