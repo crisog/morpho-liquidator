@@ -7,8 +7,9 @@
   "author": "CrisOG",
   "license": "MIT",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx watch --env-file=.env src/index.ts"
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "esbuild src/index.ts --bundle --sourcemap --platform=node --outfile=dist/index.js",
+    "start": "node dist/index.js"
   },
   "devDependencies": {
     "@morpho-org/morpho-ts": "^1.12.7",
