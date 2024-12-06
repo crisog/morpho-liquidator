@@ -65,7 +65,7 @@ export class LiquidatorBot {
     if (wethPriceUsd == null) return;
 
     const positionResults = await Promise.all(
-      positions.slice(0, 1).map((position) => {
+      positions.map((position) => {
         return this.liquidationService.processPosition(position, wethPriceUsd);
       })
     );
