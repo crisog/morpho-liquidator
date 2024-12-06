@@ -69,7 +69,5 @@ export class LiquidatorBot {
         return this.liquidationService.processPosition(position, wethPriceUsd);
       })
     );
-
-    console.log("positionResults", positionResults);
   }
 }

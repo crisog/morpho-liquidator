@@ -137,11 +137,6 @@ export class LiquidationService {
 
       if (loanTokenBalance < repaidAssets) {
         const amountNeeded = repaidAssets - loanTokenBalance;
-        console.log(
-          "Need to swap USDC for loan tokens. Amount needed: ",
-          formatUnits(amountNeeded, loanToken.decimals),
-          loanToken.symbol
-        );
 
         const swapRoute = await this.paraSwapMin.swap.getRate({
           srcToken: this.swapFromToken.address,
@@ -253,9 +248,6 @@ export class LiquidationService {
       const minProfitUsd = BigInt(this.minProfit);
 
       if (netProfitUsd < minProfitUsd) {
-        console.log(
-          `Net profit ${netProfitUsd} (profit: ${profitUsd}, gas: ${gasLimitUsd}) is less than minimum profit ${minProfitUsd}`
-        );
         return {
           position: positionData,
           status: "NOT_PROFITABLE",
@@ -275,7 +267,6 @@ export class LiquidationService {
 
       switch (bundleResponse) {
         case BundleState.Sent:
-          console.log("Bundle sent");
           return {
             position: positionData,
             status: "LIQUIDATED",
