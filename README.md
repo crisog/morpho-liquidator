@@ -73,6 +73,7 @@ yarn start
 
 - [ ] Support multiple sources of liquidatable positions (+ chance for opportunities)
 - [ ] Integrate a new indexer for positions - still work in progress [morpho-markets](https://github.com/crisog/morpho-markets)
+- [ ] Smart contracts executed liquidation w/ flash loans
 - [ ] Add support for AWS Secrets Manager to pull private keys from it
 - [ ] Listen to new blocks notifications via WebSockets for real-time opportunity discovery
 - [ ] [Reth Extension](https://reth.rs/developers/exex/exex.html) (ExEx) for live tracking of liquidatable positions
