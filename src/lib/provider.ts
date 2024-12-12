@@ -14,6 +14,10 @@ export class ProviderService {
   private flashbotsSigner: ethers.Wallet;
 
   private constructor() {
+    if (!process.env.ETH_RPC_URL) {
+      throw new Error("ETH_RPC_URL is not set");
+    }
+
     this.mainnetProvider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL);
     this.wallet = this.createWallet();
     this.flashbotsSigner = this.createWallet();
@@ -52,6 +56,10 @@ export class ProviderService {
   }
 
   private createWallet(): ethers.Wallet {
+    if (!process.env.ETH_WALLET_PRIVATE_KEY) {
+      throw new Error("ETH_WALLET_PRIVATE_KEY is not set");
+    }
+
     // TODO: Support AWS Secrets Manager to pull private key from there
     return new ethers.Wallet(
       process.env.ETH_WALLET_PRIVATE_KEY,

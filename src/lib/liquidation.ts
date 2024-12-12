@@ -1,4 +1,4 @@
-import { ethers, formatUnits, MaxUint256 } from "ethers";
+import { ethers, MaxUint256 } from "ethers";
 import { LiquidationEncoder } from "@morpho-org/blue-sdk-ethers-liquidation";
 import {
   Token,
@@ -6,7 +6,7 @@ import {
   getChainAddresses,
 } from "@morpho-org/blue-sdk";
 import { constructSimpleSDK, SimpleSDK } from "@paraswap/sdk";
-import { MarketPosition, PositionResult } from "../types";
+import { LiquidatablePosition, PositionResult } from "../types";
 import { ERC20_ABI } from "../constants";
 import { BundleState, ProviderService } from "./provider";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
@@ -75,12 +75,15 @@ export class LiquidationService {
   }
 
   async processPosition(
-    position: MarketPosition,
+    position: LiquidatablePosition,
     wethPriceUsd: number
   ): Promise<PositionResult> {
     if (position.market.collateralAsset == null) return;
 
-    const marketConfig = this.converter.getMarketConfig(position.market);
+    const marketConfig = this.converter.getMarketConfig({
+      ...position.market,
+      lltv: BigInt(position.market.lltv),
+    });
 
     const accrualPosition = await fetchAccrualPositionFromConfig(
       position.user.address as `0x${string}`,
@@ -94,31 +97,28 @@ export class LiquidationService {
       seizableCollateral,
     } = accrualPosition.accrueInterest(Time.timestamp());
 
-    const positionData: MarketPosition = {
-      user: {
-        address: userAddress,
-      },
-      market: position.market,
-    };
-
     try {
       const collateralToken = this.converter.getTokenWithPrice(
-        position.market.collateralAsset,
+        {
+          ...position.market.collateralAsset,
+          symbol: position.market.collateralAsset.symbol || "",
+          decimals: position.market.collateralAsset.decimals || 18,
+        },
         wethPriceUsd
       );
       if (collateralToken.price == null)
         throw new UnknownTokenPriceError(collateralToken.address);
 
-      console.info("collateralToken", collateralToken);
-
       const loanToken = this.converter.getTokenWithPrice(
-        position.market.loanAsset,
+        {
+          ...position.market.loanAsset,
+          symbol: position.market.loanAsset.symbol || "",
+          decimals: position.market.loanAsset.decimals || 18,
+        },
         wethPriceUsd
       );
       if (loanToken.price == null)
         throw new UnknownTokenPriceError(loanToken.address);
-
-      console.info("loanToken", loanToken);
 
       const repaidAssets = market.toBorrowAssets(
         market.getLiquidationRepaidShares(seizableCollateral)
@@ -249,7 +249,7 @@ export class LiquidationService {
 
       if (netProfitUsd < minProfitUsd) {
         return {
-          position: positionData,
+          position: position,
           status: "NOT_PROFITABLE",
           reason: "Insufficient profit after gas costs",
         };
@@ -268,13 +268,13 @@ export class LiquidationService {
       switch (bundleResponse) {
         case BundleState.Sent:
           return {
-            position: positionData,
+            position: position,
             status: "LIQUIDATED",
           };
         case BundleState.Failed:
           console.error("Bundle failed");
           return {
-            position: positionData,
+            position: position,
             status: "FAILED",
             reason: "Bundle failed",
           };
@@ -282,7 +282,7 @@ export class LiquidationService {
     } catch (error) {
       console.error(error);
       return {
-        position: positionData,
+        position: position,
         status: "FAILED",
         reason: error instanceof Error ? error.message : "Unknown error",
       };

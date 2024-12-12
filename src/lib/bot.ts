@@ -1,22 +1,17 @@
 import { CronJob } from "cron";
-import { BotConfig } from "../types";
-import { MarketService } from "./markets";
+import { BotConfig, LiquidatableAPIResponse } from "../types";
 import { LiquidationService } from "./liquidation";
 import { ProviderService } from "./provider";
-import { getChainAddresses } from "@morpho-org/blue-sdk";
-import { apiSdk } from "@morpho-org/blue-sdk-ethers-liquidation";
 import { BlueSdkConverter } from "@morpho-org/blue-api-sdk";
 import { safeGetAddress, safeParseNumber } from "@morpho-org/blue-sdk-ethers";
 
 export class LiquidatorBot {
   private config: BotConfig;
-  private marketService: MarketService;
   private liquidationService: LiquidationService;
   private converter: BlueSdkConverter;
 
   constructor(config: BotConfig) {
     this.config = config;
-    this.marketService = new MarketService(config.chainId);
 
     this.converter = new BlueSdkConverter({
       parseAddress: safeGetAddress,
@@ -50,23 +45,28 @@ export class LiquidatorBot {
   }
 
   private async execute(): Promise<void> {
-    const { wNative } = getChainAddresses(this.config.chainId);
-    const marketIds = await this.marketService.getWhitelistedMarkets();
+    if (!process.env.LIQUIDATABLE_API_ENDPOINT) {
+      throw new Error("LIQUIDATABLE_API_ENDPOINT is not set");
+    }
 
-    const {
-      assetByAddress: { priceUsd: wethPriceUsd },
-      marketPositions: { items: positions },
-    } = await apiSdk.getLiquidatablePositions({
-      chainId: this.config.chainId,
-      wNative,
-      marketIds,
-    });
+    const response = await fetch(process.env.LIQUIDATABLE_API_ENDPOINT);
 
-    if (wethPriceUsd == null) return;
+    const liquidatableResponse =
+      (await response.json()) as LiquidatableAPIResponse;
+    if (
+      !liquidatableResponse.timestamp ||
+      !liquidatableResponse.wethPriceUsd ||
+      !Array.isArray(liquidatableResponse.positions)
+    ) {
+      throw new Error("Invalid API response format");
+    }
 
-    const positionResults = await Promise.all(
-      positions.map((position) => {
-        return this.liquidationService.processPosition(position, wethPriceUsd);
+    await Promise.all(
+      liquidatableResponse.positions.slice(0, 5).map((position) => {
+        return this.liquidationService.processPosition(
+          position,
+          liquidatableResponse.wethPriceUsd
+        );
       })
     );
   }
