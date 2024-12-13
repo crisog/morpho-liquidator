@@ -101,7 +101,7 @@ export class ProviderService {
 
       console.log("Simulation successful", simulation);
 
-      const blockSpacing = [1, 2, 3, 5, 8];
+      const blockSpacing = [1, 2, 3, 5, 8, 13, 21];
       console.info("Starting bundle submissions for multiple blocks");
 
       const submissionPromises = [];

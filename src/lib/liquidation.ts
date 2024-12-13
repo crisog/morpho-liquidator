@@ -8,7 +8,7 @@ import {
   Token,
   UnknownTokenPriceError,
 } from "@morpho-org/blue-sdk";
-import { constructSimpleSDK, SimpleSDK } from "@paraswap/sdk";
+import { constructSimpleSDK, OptimalRate, SimpleSDK } from "@paraswap/sdk";
 import { LiquidatablePosition, PositionResult } from "../types";
 import { BundleState, ProviderService } from "./provider";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
@@ -68,14 +68,16 @@ export class LiquidationService {
     this.minProfit = minProfit;
 
     // Does not support Sepolia
-    this.paraSwapMin = constructSimpleSDK(
-      { chainId: this.chainId, fetch },
-      {
-        ethersV6ProviderOrSigner: provider,
-        account: walletAddress,
-        EthersV6Contract: ethers.Contract,
-      }
-    );
+    if (this.chainId !== 11155111) {
+      this.paraSwapMin = constructSimpleSDK(
+        { chainId: this.chainId, fetch },
+        {
+          ethersV6ProviderOrSigner: provider,
+          account: walletAddress,
+          EthersV6Contract: ethers.Contract,
+        }
+      );
+    }
   }
 
   async processPosition(
@@ -166,7 +168,8 @@ export class LiquidationService {
         wethPriceUsd
       );
       if (collateralToken.price == null)
-        throw new UnknownTokenPriceError(collateralToken.address);
+        if (this.chainId !== 11155111)
+          throw new UnknownTokenPriceError(collateralToken.address);
 
       const loanToken = this.converter.getTokenWithPrice(
         {
@@ -177,7 +180,8 @@ export class LiquidationService {
         wethPriceUsd
       );
       if (loanToken.price == null)
-        throw new UnknownTokenPriceError(loanToken.address);
+        if (this.chainId !== 11155111)
+          throw new UnknownTokenPriceError(loanToken.address);
 
       const repaidShares =
         market.getLiquidationRepaidShares(seizableCollateral);
@@ -195,7 +199,10 @@ export class LiquidationService {
       const transactions: ethers.TransactionRequest[] = [];
 
       // If we don't have enough loan tokens, we need to get some using swapFromToken
-      if (loanTokenBalance < repaidAssets) {
+      if (
+        loanTokenBalance < repaidAssets &&
+        this.chainId !== 11155111 // ParaSwap is not supported on Sepolia
+      ) {
         const amountNeeded = repaidAssets - loanTokenBalance;
 
         // Get the swap rate from swapFromToken to loanToken
@@ -254,20 +261,6 @@ export class LiquidationService {
         transactions.push(swapTx);
       }
 
-      // Get the swap rate from collateralToken to swapToToken
-      const priceRoute = await this.paraSwapMin.swap.getRate({
-        srcToken: collateralToken.address,
-        srcDecimals: collateralToken.decimals,
-        destToken: this.swapToToken.address,
-        destDecimals: this.swapToToken.decimals,
-        amount: seizableCollateral.toString(),
-        userAddress: this.walletAddress,
-        side: "SELL",
-        options: {
-          maxImpact: this.maxImpact,
-        },
-      });
-
       const morpho = MORPHO_CONTRACT_ADDRESSES[this.chainId];
 
       const currentAllowance = await loanTokenContract.allowance(
@@ -315,6 +308,65 @@ export class LiquidationService {
 
       transactions.push(liquidationTx);
 
+      // ParaSwap is not supported on Sepolia
+      let collateralTokenToSwapToken: OptimalRate | null = null;
+      if (this.chainId !== 11155111) {
+        // Get the swap rate from collateralToken to swapToToken
+        collateralTokenToSwapToken = await this.paraSwapMin.swap.getRate({
+          srcToken: collateralToken.address,
+          srcDecimals: collateralToken.decimals,
+          destToken: this.swapToToken.address,
+          destDecimals: this.swapToToken.decimals,
+          amount: seizableCollateral.toString(),
+          userAddress: this.walletAddress,
+          side: "SELL",
+          options: {
+            maxImpact: this.maxImpact,
+          },
+        });
+
+        const swapTxParams = await this.paraSwapMin.swap.buildTx({
+          srcToken: collateralToken.address,
+          srcAmount: seizableCollateral.toString(),
+          destToken: this.swapToToken.address,
+          slippage: this.maxSlippage,
+          priceRoute: collateralTokenToSwapToken,
+          userAddress: this.walletAddress,
+        });
+
+        const swapFromTokenContract = new ethers.Contract(
+          this.swapFromToken.address,
+          ERC20Abi,
+          this.provider
+        );
+
+        const swapToTokenAllowance = await swapFromTokenContract.allowance(
+          this.walletAddress,
+          swapTxParams.to
+        );
+
+        if (swapToTokenAllowance < seizableCollateral) {
+          const approveTx =
+            await swapFromTokenContract.approve.populateTransaction(
+              swapTxParams.to,
+              MaxUint256
+            );
+
+          const approveTxResponse = await this.signer.sendTransaction(
+            approveTx
+          );
+          console.info("Approve transaction sent:", approveTxResponse.hash);
+
+          await approveTxResponse.wait();
+
+          console.info("Approve transaction confirmed");
+
+          const swapTx = await this.signer.populateTransaction(swapTxParams);
+
+          transactions.push(swapTx);
+        }
+      }
+
       const priorityFee = BigInt(2) ** BigInt(9);
 
       // Get the base nonce once before the loop
@@ -345,24 +397,27 @@ export class LiquidationService {
             chainId: this.chainId,
           };
 
-          const gasLimitUsd =
-            (ethPriceUsd * (gasLimit * txParams.maxFeePerGas)) / WAD;
+          // No profit calculation on Sepolia
+          if (this.chainId !== 11155111) {
+            const gasLimitUsd =
+              (ethPriceUsd * (gasLimit * txParams.maxFeePerGas)) / WAD;
 
-          const profitUsd = loanToken.toUsd(
-            BigInt(priceRoute.destAmount) - repaidAssets
-          )!;
+            const profitUsd = loanToken.toUsd(
+              BigInt(collateralTokenToSwapToken.destAmount) - repaidAssets
+            )!;
 
-          const netProfitUsd = profitUsd - gasLimitUsd;
-          const minProfitUsd = BigInt(this.minProfit);
+            const netProfitUsd = profitUsd - gasLimitUsd;
+            const minProfitUsd = BigInt(this.minProfit);
 
-          if (netProfitUsd < minProfitUsd) {
-            console.info(
-              "Skipping liquidation due to insufficient profit. Net profit:",
-              netProfitUsd,
-              "Min profit:",
-              minProfitUsd
-            );
-            return;
+            if (netProfitUsd < minProfitUsd) {
+              console.info(
+                "Skipping liquidation due to insufficient profit. Net profit:",
+                netProfitUsd,
+                "Min profit:",
+                minProfitUsd
+              );
+              return;
+            }
           }
 
           return await this.signer.signTransaction(txParams);
