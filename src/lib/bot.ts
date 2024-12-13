@@ -18,7 +18,7 @@ export class LiquidatorBot {
       parseNumber: safeParseNumber,
     });
 
-    const providerService = ProviderService.getInstance();
+    const providerService = ProviderService.getInstance(this.config.chainId);
 
     const provider = providerService.getProvider();
     const walletAddress = providerService.getWalletAddress();
@@ -58,11 +58,17 @@ export class LiquidatorBot {
       !liquidatableResponse.wethPriceUsd ||
       !Array.isArray(liquidatableResponse.positions)
     ) {
-      throw new Error("Invalid API response format");
+      throw new Error(
+        `Invalid API response format: ${JSON.stringify(liquidatableResponse)}`
+      );
     }
+    console.info(
+      "liquidatableResponse:",
+      JSON.stringify(liquidatableResponse, null, 2)
+    );
 
     await Promise.all(
-      liquidatableResponse.positions.slice(0, 5).map((position) => {
+      liquidatableResponse.positions.map((position) => {
         return this.liquidationService.processPosition(
           position,
           liquidatableResponse.wethPriceUsd

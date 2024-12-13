@@ -36,6 +36,7 @@ export interface LiquidatablePosition {
 }
 
 export interface LiquidatableAPIResponse {
+  chainId: number;
   timestamp: number;
   wethPriceUsd: number;
   positions: LiquidatablePosition[];

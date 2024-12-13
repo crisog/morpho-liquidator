@@ -1,21 +1,24 @@
 import { ethers, MaxUint256 } from "ethers";
-import { LiquidationEncoder } from "@morpho-org/blue-sdk-ethers-liquidation";
 import {
+  AccrualPosition,
+  Market,
+  MarketConfig,
+  MarketId,
+  Position,
   Token,
   UnknownTokenPriceError,
-  getChainAddresses,
 } from "@morpho-org/blue-sdk";
 import { constructSimpleSDK, SimpleSDK } from "@paraswap/sdk";
 import { LiquidatablePosition, PositionResult } from "../types";
-import { ERC20_ABI } from "../constants";
 import { BundleState, ProviderService } from "./provider";
 import { FlashbotsBundleProvider } from "@flashbots/ethers-provider-bundle";
 import { BlueSdkConverter } from "@morpho-org/blue-api-sdk";
 import { Time } from "@morpho-org/morpho-ts";
-import {
-  fetchAccrualPositionFromConfig,
-  safeParseNumber,
-} from "@morpho-org/blue-sdk-ethers";
+import { MorphoAbi } from "../../abis/Morpho";
+import { AdaptiveCurveIrmAbi } from "../../abis/AdaptiveCurveIrm";
+import { ERC20Abi } from "../../abis/ERC20";
+import { MORPHO_CONTRACT_ADDRESSES, WAD } from "../constants";
+import { safeParseNumber } from "@morpho-org/blue-sdk-ethers";
 
 export class LiquidationService {
   private chainId: number;
@@ -64,6 +67,7 @@ export class LiquidationService {
     this.swapToToken = swapToToken;
     this.minProfit = minProfit;
 
+    // Does not support Sepolia
     this.paraSwapMin = constructSimpleSDK(
       { chainId: this.chainId, fetch },
       {
@@ -80,15 +84,70 @@ export class LiquidationService {
   ): Promise<PositionResult> {
     if (position.market.collateralAsset == null) return;
 
-    const marketConfig = this.converter.getMarketConfig({
-      ...position.market,
-      lltv: BigInt(position.market.lltv),
+    // Morpho's SDK is not compatible with Sepolia, so we need to fetch markets/positions directly
+    const morphoContract = new ethers.Contract(
+      MORPHO_CONTRACT_ADDRESSES[this.chainId],
+      MorphoAbi,
+      this.provider
+    );
+
+    const [supplyShares, borrowShares, collateral] =
+      await morphoContract.position(
+        position.market.id as MarketId,
+        position.user.address as `0x${string}`,
+        {}
+      );
+
+    const inputAccrualPosition = new Position({
+      user: position.user.address as `0x${string}`,
+      marketId: position.market.id as MarketId,
+      supplyShares,
+      borrowShares,
+      collateral,
     });
 
-    const accrualPosition = await fetchAccrualPositionFromConfig(
-      position.user.address as `0x${string}`,
-      marketConfig,
-      { provider: this.provider }
+    const [
+      totalSupplyAssets,
+      totalSupplyShares,
+      totalBorrowShares,
+      totalBorrowAssets,
+      lastUpdate,
+      fee,
+    ] = await morphoContract.market(position.market.id as MarketId);
+
+    const marketConfig = new MarketConfig({
+      collateralToken: position.market.collateralAsset.address,
+      loanToken: position.market.loanAsset.address,
+      oracle: position.market.oracleAddress,
+      irm: position.market.irmAddress,
+      lltv: position.market.lltv,
+    });
+
+    const irmContract = new ethers.Contract(
+      position.market.irmAddress,
+      AdaptiveCurveIrmAbi,
+      this.provider
+    );
+
+    const rateAtTarget = await irmContract.rateAtTarget(
+      position.market.id as MarketId
+    );
+
+    const inputMarket = new Market({
+      totalSupplyAssets,
+      totalSupplyShares,
+      totalBorrowAssets,
+      totalBorrowShares,
+      lastUpdate,
+      fee,
+      price: BigInt(position.market.oraclePrice),
+      rateAtTarget,
+      config: marketConfig,
+    });
+
+    const accrualPosition = new AccrualPosition(
+      inputAccrualPosition,
+      inputMarket
     );
 
     const {
@@ -120,28 +179,30 @@ export class LiquidationService {
       if (loanToken.price == null)
         throw new UnknownTokenPriceError(loanToken.address);
 
-      const repaidAssets = market.toBorrowAssets(
-        market.getLiquidationRepaidShares(seizableCollateral)
-      );
+      const repaidShares =
+        market.getLiquidationRepaidShares(seizableCollateral);
+      const repaidAssets = market.toBorrowAssets(repaidShares);
 
       const loanTokenContract = new ethers.Contract(
-        marketConfig.loanToken,
-        ERC20_ABI,
+        position.market.loanAsset.address,
+        ERC20Abi,
         this.signer
       );
       const loanTokenBalance = await loanTokenContract.balanceOf(
         this.walletAddress
       );
 
-      const encoder = new LiquidationEncoder(this.walletAddress, this.signer);
+      const transactions: ethers.TransactionRequest[] = [];
 
+      // If we don't have enough loan tokens, we need to get some using swapFromToken
       if (loanTokenBalance < repaidAssets) {
         const amountNeeded = repaidAssets - loanTokenBalance;
 
+        // Get the swap rate from swapFromToken to loanToken
         const swapRoute = await this.paraSwapMin.swap.getRate({
           srcToken: this.swapFromToken.address,
           srcDecimals: this.swapFromToken.decimals,
-          destToken: marketConfig.loanToken,
+          destToken: position.market.loanAsset.address,
           destDecimals: loanToken.decimals,
           amount: amountNeeded.toString(),
           userAddress: this.walletAddress,
@@ -154,7 +215,7 @@ export class LiquidationService {
         const swapTxParams = await this.paraSwapMin.swap.buildTx({
           srcToken: this.swapFromToken.address,
           srcAmount: amountNeeded.toString(),
-          destToken: marketConfig.loanToken,
+          destToken: position.market.loanAsset.address,
           slippage: this.maxSlippage,
           priceRoute: swapRoute,
           userAddress: this.walletAddress,
@@ -162,7 +223,7 @@ export class LiquidationService {
 
         const swapFromTokenContract = new ethers.Contract(
           this.swapFromToken.address,
-          ERC20_ABI,
+          ERC20Abi,
           this.provider
         );
 
@@ -172,20 +233,28 @@ export class LiquidationService {
         );
 
         if (currentAllowance < amountNeeded) {
-          encoder.erc20Approve(
-            this.swapFromToken.address,
-            swapTxParams.to,
-            MaxUint256
+          const approveTx =
+            await swapFromTokenContract.approve.populateTransaction(
+              swapTxParams.to,
+              MaxUint256
+            );
+
+          const approveTxResponse = await this.signer.sendTransaction(
+            approveTx
           );
+          console.info("Approve transaction sent", approveTxResponse.hash);
+
+          await approveTxResponse.wait();
+
+          console.info("Approve transaction confirmed");
         }
 
-        encoder.pushCall(
-          swapTxParams.to,
-          swapTxParams.value,
-          swapTxParams.data
-        );
+        const swapTx = await this.signer.populateTransaction(swapTxParams);
+
+        transactions.push(swapTx);
       }
 
+      // Get the swap rate from collateralToken to swapToToken
       const priceRoute = await this.paraSwapMin.swap.getRate({
         srcToken: collateralToken.address,
         srcDecimals: collateralToken.decimals,
@@ -199,7 +268,7 @@ export class LiquidationService {
         },
       });
 
-      const { morpho } = getChainAddresses(this.chainId);
+      const morpho = MORPHO_CONTRACT_ADDRESSES[this.chainId];
 
       const currentAllowance = await loanTokenContract.allowance(
         this.walletAddress,
@@ -207,63 +276,104 @@ export class LiquidationService {
       );
 
       if (currentAllowance < repaidAssets) {
-        encoder.erc20Approve(marketConfig.loanToken, morpho, MaxUint256);
+        const approveTx = await loanTokenContract.approve.populateTransaction(
+          morpho,
+          MaxUint256
+        );
+
+        const approveTxResponse = await this.signer.sendTransaction(approveTx);
+        console.info("Approve transaction sent:", approveTxResponse.hash);
+
+        await approveTxResponse.wait();
+
+        console.info("Approve transaction confirmed");
       }
 
-      encoder.morphoBlueLiquidate(
+      const morphoContract = new ethers.Contract(
         morpho,
-        marketConfig,
-        userAddress,
-        seizableCollateral,
-        BigInt(0),
-        encoder.flush()
+        MorphoAbi,
+        this.provider
       );
 
-      const liquidationTx = await encoder.populateExec();
+      const liquidationTx = await morphoContract.liquidate.populateTransaction(
+        {
+          loanToken: position.market.loanAsset.address,
+          collateralToken: position.market.collateralAsset.address,
+          oracle: position.market.oracleAddress,
+          irm: position.market.irmAddress,
+          lltv: position.market.lltv,
+        },
+        userAddress,
+        // using the seizable collateral amount results in an overflow at the morpho contract,
+        // so we are using the repaid shares instead
+        BigInt(0),
+        // for some reason, calculating the repaid shares from total seizable collateral doesn't result in a full liquidation
+        // i.e. const repaidShares = market.getLiquidationRepaidShares(seizableCollateral);
+        borrowShares, // using `borrowShares` liquidates entire position
+        "0x"
+      );
 
-      const [gasLimit, block, nonce] = await Promise.all([
-        this.signer.estimateGas(liquidationTx),
-        this.signer.provider.getBlock("latest", false),
-        this.signer.getNonce(),
-      ]);
+      transactions.push(liquidationTx);
+
+      const priorityFee = BigInt(2) ** BigInt(9);
+
+      // Get the base nonce once before the loop
+      const baseNonce = await this.signer.getNonce();
+      const block = await this.signer.provider.getBlock("latest", false);
 
       if (block == null) throw Error("could not fetch latest block");
 
       const { baseFeePerGas } = block;
       if (baseFeePerGas == null) throw Error("could not fetch base fee");
 
-      const maxFeePerGas = FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(
-        baseFeePerGas,
-        1
-      );
+      const maxBaseFeeInFutureBlock =
+        FlashbotsBundleProvider.getMaxBaseFeeInFutureBlock(baseFeePerGas, 1);
 
       const ethPriceUsd = safeParseNumber(wethPriceUsd, 18);
 
-      const gasLimitUsd = ethPriceUsd.wadMulDown(gasLimit * maxFeePerGas);
-      const profitUsd = loanToken.toUsd(
-        BigInt(priceRoute.destAmount) - repaidAssets
-      )!;
+      const signedTransactions = await Promise.all(
+        transactions.map(async (transaction) => {
+          const gasLimit = await this.signer.estimateGas(transaction);
 
-      const netProfitUsd = profitUsd - gasLimitUsd;
-      const minProfitUsd = BigInt(this.minProfit);
+          const txParams = {
+            ...transaction,
+            gasLimit,
+            maxFeePerGas: maxBaseFeeInFutureBlock + priorityFee,
+            maxPriorityFeePerGas: priorityFee,
+            nonce: baseNonce,
+            type: 2,
+            chainId: this.chainId,
+          };
 
-      if (netProfitUsd < minProfitUsd) {
-        return {
-          position: position,
-          status: "NOT_PROFITABLE",
-          reason: "Insufficient profit after gas costs",
-        };
-      }
+          const gasLimitUsd =
+            (ethPriceUsd * (gasLimit * txParams.maxFeePerGas)) / WAD;
 
-      const providerService = ProviderService.getInstance();
+          const profitUsd = loanToken.toUsd(
+            BigInt(priceRoute.destAmount) - repaidAssets
+          )!;
 
-      const bundleResponse = await providerService.sendBundle({
-        ...liquidationTx,
-        chainId: this.chainId,
-        nonce,
-        maxFeePerGas,
-        gasLimit,
-      });
+          const netProfitUsd = profitUsd - gasLimitUsd;
+          const minProfitUsd = BigInt(this.minProfit);
+
+          if (netProfitUsd < minProfitUsd) {
+            console.info(
+              "Skipping liquidation due to insufficient profit. Net profit:",
+              netProfitUsd,
+              "Min profit:",
+              minProfitUsd
+            );
+            return;
+          }
+
+          return await this.signer.signTransaction(txParams);
+        })
+      );
+
+      const providerService = ProviderService.getInstance(this.chainId);
+
+      const bundleResponse = await providerService.sendBundle(
+        signedTransactions
+      );
 
       switch (bundleResponse) {
         case BundleState.Sent:
