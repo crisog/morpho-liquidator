@@ -72,9 +72,11 @@ yarn start
 
 ### Considerations
 
-- This bot can run in Sepolia, however, the swaps won't be executed because ParaSwap is not available on Sepolia. It will only fully liquidate the position; and it will not sell the seized collateral or calculate profits.
-- This bot only executes full liquidations, but it can be modified to use a different strategy (i.e. partial liquidations)
+- This bot supports the following networks: Ethereum Mainnet, Ethereum Sepolia and Base Mainnet
 - This bot has been tested on Sepolia, you can track the bot interactions [here](https://sepolia.etherscan.io/address/0xCF6D79F936f50B6a8257733047308664151B2510).
+- This bot only executes full liquidations, but it can be modified to use a different strategy (i.e. partial liquidations)
+- This bot can run in Sepolia, however, the swaps won't be executed because ParaSwap is not available on Sepolia. It will only fully liquidate the position; and it will not sell the seized collateral or calculate profits.
+- The scripts used to deploy the contracts (oracle, tokens) and send the supply collateral/borrow transactions can be found [here](https://github.com/crisog/morpho-test).
 
 ## Roadmap
 
