@@ -70,6 +70,12 @@ yarn start
 - [x] Periodical execution via cron job
 - [x] Chain, swap slippage and swap max impact are configurable
 
+### Considerations
+
+- This bot can run in Sepolia, however, the swaps won't be executed because ParaSwap is not available on Sepolia. It will only fully liquidate the position; and it will not sell the seized collateral or calculate profits.
+- This bot only executes full liquidations, but it can be modified to use a different strategy (i.e. partial liquidations)
+- This bot has been tested on Sepolia, you can track the bot interactions [here](https://sepolia.etherscan.io/address/0xCF6D79F936f50B6a8257733047308664151B2510).
+
 ## Roadmap
 
 - [x] Integrate a new indexer for positions [morpho-markets](https://github.com/crisog/morpho-markets)
