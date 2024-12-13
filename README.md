@@ -30,6 +30,7 @@ yarn install --frozen-lockfile
 ```bash
 ETH_RPC_URL=https://ethereum-public.nodies.app
 BASE_RPC_URL=https://base-public.nodies.app
+SEPOLIA_RPC_URL=https://sepolia-public.nodies.app
 
 ETH_WALLET_PRIVATE_KEY=<YOUR_NON_PRODUCTION_PRIVATE_KEY>
 ```
@@ -45,8 +46,8 @@ const config: BotConfig = {
   timeZone: "America/Los_Angeles",
   maxSlippage: 50, // this is scaled by 10000, so 50 is 0.5%
   maxImpact: 2, // this is scaled by 100, so 2 is 2%
-  swapFromToken: USDC_TOKEN,
-  swapToToken: USDC_TOKEN,
+  swapFromToken: USDC_TOKEN_MAINNET,
+  swapToToken: USDC_TOKEN_MAINNET,
   minProfit: 500, // in USD
 };
 ```
@@ -71,8 +72,8 @@ yarn start
 
 ## Roadmap
 
+- [x] Integrate a new indexer for positions [morpho-markets](https://github.com/crisog/morpho-markets)
 - [ ] Support multiple sources of liquidatable positions (+ chance for opportunities)
-- [ ] Integrate a new indexer for positions - still work in progress [morpho-markets](https://github.com/crisog/morpho-markets)
 - [ ] Smart contracts executed liquidation w/ flash loans
 - [ ] Add support for AWS Secrets Manager to pull private keys from it
 - [ ] Listen to new blocks notifications via WebSockets for real-time opportunity discovery
