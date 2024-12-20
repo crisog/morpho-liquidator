@@ -81,11 +81,9 @@ yarn start
 ## Roadmap
 
 - [x] Integrate a new indexer for positions [morpho-markets](https://github.com/crisog/morpho-markets)
-- [ ] Support multiple sources of liquidatable positions (+ chance for opportunities)
 - [ ] Smart contracts executed liquidation w/ flash loans
 - [ ] Add support for AWS Secrets Manager to pull private keys from it
-- [ ] Listen to new blocks notifications via WebSockets for real-time opportunity discovery
-- [ ] [Reth Extension](https://reth.rs/developers/exex/exex.html) (ExEx) for live tracking of liquidatable positions
+- [ ] [Reth Extension](https://reth.rs/developers/exex/exex.html) (ExEx) for live tracking of liquidatable positions as indexer
 
 ## Credits
 
